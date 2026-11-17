@@ -1,35 +1,48 @@
-// A working makefun-frontend-01 entry (Node 22, standard library only): the frontend is this directory's app/
-// folder, plain static files a browser opens at app/index.html (ES modules, CSS, no build step), reading make.fun's
-// public API at https://make.fun/api. The program hands it in: it copies app/ and screenshots/ from beside this file
-// to /output and writes /output/dossier.json, the summary the judge reads (your screenshots, the first load's files
-// and bytes, and your source), with the vendored make.fun library. Leave vendor/makefun-frontend.ts as it is: the
-// scorer requires dossier.json to be byte for byte what its own copy writes.
-//
-// A starting point, not a winner: a plain board of open bounties and a page for each. Build your frontend in app/
-// (a leaderboard, profiles, speed, ease of use), put 3 PNG or JPEG screenshots of it running on live data in
-// screenshots/ (the first by name is the cover; shots.json says which views this starter's were taken of), and run it.
-//
-// Serve it locally with `node serve.ts`, then open http://localhost:8080.
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
+// Hands this entry in: copies app/ and screenshots/ next to this file into the
+// output directory and writes /output/dossier.json with the kit's buildDossier
+// from vendor/makefun-frontend.ts. Node 22, standard library only; no network.
+// Run it outside the grader with MAKEFUN_OUTPUT_DIR standing in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// vendor/makefun-frontend.ts must stay the kit's byte-identical copy, and this
+// file must stay at the repository root, beside app/ and screenshots/.
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-frontend.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+// The scorer's own caps, from the kit's reference/gate.json: text_max_bytes is
+// the only one that shapes the dossier's bytes; the others refuse an entry the
+// scorer would refuse anyway (over 3 screenshots or one over 256 KiB; app/
+// over 993 files and directories or 16 MiB).
+const DOSSIER_OPTIONS = {
+  text_max_bytes: 163840,
+  screenshots: { max: 3, max_bytes: 262144 },
+  app_max_files: 993,
+  app_max_bytes: 16777216,
+};
 
-mkdirSync(out, { recursive: true });
-cpSync(join(here, 'app'), join(out, 'app'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+const repoRoot = fileURLToPath(new URL('.', import.meta.url));
+const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
-// scorer would refuse (more than 3 screenshots or one over 256 KiB; more than 993 files and directories in app/ or
-// 16 MiB of app files: app/ counts beside /output's own 1000-entry cap, its screenshots/ and dossier.json).
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, { text_max_bytes: 163840, screenshots: { max: 3, max_bytes: 262144 }, app_max_files: 993, app_max_bytes: 16777216 }),
-);
+function copyTree(source, target) {
+  mkdirSync(target, { recursive: true });
+  cpSync(source, target, { recursive: true });
+}
+
+function handIn() {
+  mkdirSync(outputDir, { recursive: true });
+  const appOut = join(outputDir, 'app');
+  const shotsOut = join(outputDir, 'screenshots');
+  rmSync(appOut, { recursive: true, force: true });
+  rmSync(shotsOut, { recursive: true, force: true });
+  copyTree(join(repoRoot, 'app'), appOut);
+  if (existsSync(join(repoRoot, 'screenshots'))) {
+    copyTree(join(repoRoot, 'screenshots'), shotsOut);
+  }
+  const dossier = buildDossier(outputDir, DOSSIER_OPTIONS);
+  writeFileSync(join(outputDir, 'dossier.json'), dossier);
+  console.log(`wrote ${join(outputDir, 'dossier.json')} (${dossier.length} bytes)`);
+}
+
+handIn();
